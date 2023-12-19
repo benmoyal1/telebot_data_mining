@@ -4,11 +4,12 @@ import csv
 from datetime import datetime, timezone
 from datetime import datetime as dt
 import time
-import pymongo
 from pymongo import MongoClient
+import pickle
 
-BATCH_SIZE = 5000
-collection = MongoClient("mongodb://localhost:27017/").Telegram_Test.chat_entries
+# chose how many message you want to insert altogether
+BATCH_SIZE = 5
+MONGO_LOCAL = "mongodb://localhost:27017/"
 
 
 def generate_entry(message, client, chat_to_scrape):
@@ -22,7 +23,7 @@ def generate_entry(message, client, chat_to_scrape):
     if message.reactions is not None:
         for reaction_count in message.reactions.results:
             # emoji = reaction_count.reaction.emoticon
-            emoji_string += str(reaction_count.count)
+            emoji_string += int(reaction_count.count)
             # emoji_string += emoji + " " + count + " "
 
     # channel name after extracted from the channel link
@@ -56,6 +57,7 @@ def generate_entry(message, client, chat_to_scrape):
 
     # updates the progress counter
     print(f'Id: {message.id:05}.\n')
+    print(message_entry)
     return message_entry
 
 
@@ -75,50 +77,89 @@ def load_messages(client, chat_to_scrape):
     return messages
 
 
-def scrape_to_csv(client, chat_to_scrape, phone_number, t):
+def scrape_to_db(client, chat_to_scrape, phone_number, t, collection):
     # verifies authorization
     authorize_client(client, phone_number)
     messages = load_messages(client, chat_to_scrape)
     counter = 0
-    batch = list()
-    # Todo handle the if statement of the dates and
-    # Todo send daniel all info can be gathered from msg (just print)
-    # 
-    in_range = True
+    batch = []
     for message in messages:
-        # print(message.date <= datetime(t['t_yy'], t['t_mm'], t['t_dd']))
         from_date = datetime(t['f_yy'], t['f_mm'], t['f_dd'], tzinfo=timezone.utc)
         to_date = datetime(t['t_yy'], t['t_mm'], t['t_dd'], tzinfo=timezone.utc)
-        if to_date > message.date > from_date:
+        to_date = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # print(message.date <= to_date, message.date, "<=", to_date)
+        # print(message.date >= from_date, message.date, ">=", from_date)
+
+        if from_date <= message.date < to_date:
             batch.append(generate_entry(message, client, chat_to_scrape))
-        if counter >= BATCH_SIZE:
-            collection.insert_many(batch)
-            batch.clear()
-            counter = 0
-        counter += 1
+            counter += 1
+            if counter >= BATCH_SIZE:
+                collection.insert_many(batch)
+                batch.clear()
+                counter = 0
+                break
 
 
 def main():
-    with open('credentials.txt', 'r') as file:
-        hash_id_phone = [line for line in file]
+    # insert your credentials into a pickle file for security reasons
+    # use this 'with open' statement only when you use new api
+    with open("credentials_pickel.pkl", 'wb') as file:
+        pickle.dump({"api_hash": "42342d23234r322342r23r23r2",
+                     "api_id": 12312312,
+                     "phone": +123123123122
+                     }, file)
 
-    api_hash = hash_id_phone[0]  # insert your hash api
-    api_id = int(hash_id_phone[1])  # insert your api id
-    phone_number = int(hash_id_phone[2])  # insert internationally formatted phone number
+    # import credentials from pickle file
+    with open("credentials_pickel.pkl", 'rb') as file:
+        f = pickle.load(file)
+        api_hash = f['hash']  # insert your hash api
+        api_id = f["id"]  # insert your api id
+        phone_number = f["phone"]  # insert internationally formatted phone number
+
+    # the chat you want to scrape
+    # copy the link from the chat or use @goupName *dont* copy the url from browser
     chat_to_scrape = 'https://t.me/admma_news'  # copy the link from the description
 
     # enter the date range of the information you want to scrape
+    # from f_date <= scraped_message <= t_date
     # f - from, t - to, dd - day, mm - month,yy - year
-    t = {"f_dd": 17, "t_dd": 17,
+    t = {"f_dd": 17, "t_dd": 19,
          "f_mm": 12, "t_mm": 12,
          "f_yy": 2023, "t_yy": 2023,
          }
+
+    # connects to client
     client = TelegramClient(MemorySession(), api_id, api_hash)
     client.connect()
+    # connects to db feel free to change
+    collection = MongoClient(MONGO_LOCAL).Telegram_Test.chat_entries
     # mine data from all the chats
-    scrape_to_csv(client, chat_to_scrape, phone_number, t)
+    scrape_to_db(client, chat_to_scrape, phone_number, t, collection)
     client.disconnect()
 
 
 if __name__ == '__main__':
     main()
+# attributes of message
+# ['CONSTRUCTOR_ID', 'SUBCLASS_OF_ID', '__abstractmethods__', '__bytes__', '__class__',
+# '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__',
+# '__getattribute__', '__getstate__', '__gt__', '__hash__', '__init__', '__init_subclass__',
+# '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__',
+# '__setattr__', '__sizeof__', '__slots__', '__str__', '__subclasshook__', '__weakref__', '_abc_impl',
+# '_action_entities', '_broadcast', '_buttons', '_buttons_count', '_buttons_flat', '_bytes', '_chat',
+# '_chat_peer', '_client', '_document_by_attribute', '_file', '_finish_init', '_forward', '_input_chat',
+# '_input_sender', '_linked_chat', '_needed_markup_bot', '_refetch_chat', '_refetch_sender', '_reload_message',
+# '_reply_message', '_sender', '_sender_id', '_set_buttons', '_text', '_via_bot', '_via_input_bot', 'action',
+# 'action_entities', 'audio', 'button_count', 'buttons', 'chat', 'chat_id', 'click', 'client', 'contact', 'date',
+# 'delete', 'dice', 'document', 'download_media', 'edit', 'edit_date', 'edit_hide', 'entities', 'file', 'forward',
+# 'forward_to', 'forwards', 'from_id', 'from_reader', 'from_scheduled', 'fwd_from', 'game', 'geo',
+# 'get_buttons', 'get_chat', 'get_entities_text', 'get_input_chat', 'get_input_sender'
+# , 'get_reply_message', 'get_sender', 'gif', 'grouped_id', 'id', 'input_chat', 'input_sender',
+# 'invert_media', 'invoice', 'is_channel', 'is_group', 'is_private', 'is_reply', 'legacy', 'mark_read',
+# 'media', 'media_unread', 'mentioned', 'message', 'noforwards', 'out', 'peer_id', 'photo', 'pin',
+# 'pinned', 'poll', 'post', 'post_author', 'pretty_format', 'raw_text', 'reactions', 'replies', 'reply',
+# 'reply_markup', 'reply_to', 'reply_to_msg_id', 'respond', 'restriction_reason', 'sender', 'sender_id',
+# 'serialize_bytes', 'serialize_datetime', 'silent', 'sticker', 'stringify', 'text', 'to_dict', 'to_id',
+# 'to_json', 'ttl_period', 'unpin', 'venue', 'via_bot', 'via_bot_id', 'via_input_bot', 'video',
+# 'video_note', 'views', 'voice', 'web_preview']
