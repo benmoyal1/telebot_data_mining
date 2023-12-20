@@ -13,32 +13,33 @@ MONGO_LOCAL = "mongodb://localhost:27017/"
 
 
 def generate_entry(message, client, chat_to_scrape):
-    # url of the post in the message
-    url = 'no media'
-    if message.media:
-        url = f'https://t.me/{chat_to_scrape}/{message.id}'.replace('@', '')
+    # link to the  message
+    url = f'https://t.me/{chat_to_scrape}/{message.id}'.replace('@', '')
 
     # reactions
-    emoji_string = 0
+    hearts_likes = 0
+    total_reactions = 0
     if message.reactions is not None:
         for reaction_count in message.reactions.results:
-            # emoji = reaction_count.reaction.emoticon
-            emoji_string += int(reaction_count.count)
-            # emoji_string += emoji + " " + count + " "
+            total_reactions += int(reaction_count.count)
+            if reaction_count.reaction.emoticon in ['👍', '❤️']:
+                hearts_likes += int(reaction_count.count)
 
     # channel name after extracted from the channel link
     channel_name = chat_to_scrape.split("/")[-1] if "/" in chat_to_scrape else chat_to_scrape[1:]
 
+    # TODO make sure to correct the two hours gap
     # message date
     msg_data = message.date.strftime('%Y-%m-%d')
-    msg_time = message.date.strftime('%H:%M:%S')
+    msg_time = message.date.strftime('%H:%M:%S')  # H + 2 ?
 
     # the returned entry
     message_entry = {"date": msg_data, "time": msg_time,
-                     "channel name": channel_name, "channel url": chat_to_scrape,
-                     "link": url,
+                     "channel name": channel_name,
+                     "message_link": url,
                      "content": message.text,
-                     "reactions": emoji_string,
+                     "hearts_likes": hearts_likes,
+                     "total_reactions": total_reactions,
                      "views": message.views
                      }
 
@@ -104,17 +105,17 @@ def scrape_to_db(client, chat_to_scrape, phone_number, t, collection):
 def main():
     # insert your credentials into a pickle file for security reasons
     # use this 'with open' statement only when you use new api
-    with open("credentials_pickel.pkl", 'wb') as file:
-        pickle.dump({"api_hash": "42342d23234r322342r23r23r2",
-                     "api_id": 12312312,
-                     "phone": +123123123122
-                     }, file)
+    # with open("credentials_pickel.pkl", 'wb') as file:
+    #     pickle.dump({"api_hash": "2aa2e33a9asdv44sca4040c4e2c8asdc4",
+    #                  "api_id": 11222222,
+    #                  "phone": +11222222
+    #                  }, file)
 
     # import credentials from pickle file
     with open("credentials_pickel.pkl", 'rb') as file:
         f = pickle.load(file)
-        api_hash = f['hash']  # insert your hash api
-        api_id = f["id"]  # insert your api id
+        api_hash = f['api_hash']  # insert your hash api
+        api_id = f["api_id"]  # insert your api id
         phone_number = f["phone"]  # insert internationally formatted phone number
 
     # the chat you want to scrape
@@ -124,16 +125,16 @@ def main():
     # enter the date range of the information you want to scrape
     # from f_date <= scraped_message <= t_date
     # f - from, t - to, dd - day, mm - month,yy - year
-    t = {"f_dd": 17, "t_dd": 19,
-         "f_mm": 12, "t_mm": 12,
-         "f_yy": 2023, "t_yy": 2023,
+    t = {"f_dd": 17, "t_dd": datetime.today().day,
+         "f_mm": 12, "t_mm": datetime.today().month,
+         "f_yy": 2023, "t_yy": datetime.today().year,
          }
-
     # connects to client
     client = TelegramClient(MemorySession(), api_id, api_hash)
     client.connect()
     # connects to db feel free to change
     collection = MongoClient(MONGO_LOCAL).Telegram_Test.chat_entries
+    collection.delete_many({})
     # mine data from all the chats
     scrape_to_db(client, chat_to_scrape, phone_number, t, collection)
     client.disconnect()
