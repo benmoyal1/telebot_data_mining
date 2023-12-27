@@ -6,9 +6,10 @@ from datetime import datetime as dt
 import time
 from pymongo import MongoClient
 import pickle
+from datetime import timedelta
 
 # chose how many message you want to insert altogether
-BATCH_SIZE = 5
+BATCH_SIZE = 20
 MONGO_LOCAL = "mongodb://localhost:27017/"
 
 
@@ -31,7 +32,7 @@ def generate_entry(message, client, chat_to_scrape):
     # TODO make sure to correct the two hours gap
     # message date
     msg_data = message.date.strftime('%Y-%m-%d')
-    msg_time = message.date.strftime('%H:%M:%S')  # H + 2 ?
+    msg_time = (message.date + timedelta(hours=2)).strftime('%H:%M:%S')
 
     # the returned entry
     message_entry = {"date": msg_data, "time": msg_time,
