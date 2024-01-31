@@ -106,11 +106,11 @@ def scrape_to_db(client, chat_to_scrape, phone_number, t, collection):
 def main():
     # insert your credentials into a pickle file for security reasons
     # use this 'with open' statement only when you use new api
-    # with open("credentials_pickel.pkl", 'wb') as file:
-    #     pickle.dump({"api_hash": "2aa2e33a9asdv44sca4040c4e2c8asdc4",
-    #                  "api_id": 11222222,
-    #                  "phone": +11222222
-    #                  }, file)
+    with open("credentials_pickel.pkl", 'wb') as file:
+        pickle.dump({"api_hash": "2aa2e33a9asdv44sca4040c4e2c8asdc4",
+                     "api_id": 11222222,
+                     "phone": +11222222
+                     }, file)
 
     # import credentials from pickle file
     with open("credentials_pickel.pkl", 'rb') as file:
@@ -135,7 +135,7 @@ def main():
     client.connect()
     # connects to db feel free to change
     collection = MongoClient(MONGO_LOCAL).Telegram_Test.chat_entries
-    collection.delete_many({})
+    # collection.delete_many({})
     # mine data from all the chats
     scrape_to_db(client, chat_to_scrape, phone_number, t, collection)
     client.disconnect()
