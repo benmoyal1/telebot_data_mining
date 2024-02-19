@@ -1,3 +1,5 @@
+import dataclasses
+
 from telethon.sync import TelegramClient
 from telethon.sessions import MemorySession
 import csv
@@ -7,29 +9,29 @@ import time
 from pymongo import MongoClient
 import pickle
 from datetime import timedelta
+import asyncio
 
 # chose how many message you want to insert altogether
-BATCH_SIZE = 20
-MONGO_LOCAL = "mongodb://localhost:27017/"
+BATCH_SIZE: int = 100
+MONGO_LOCAL: str = "mongodb://localhost:27017/"
 
 
 def generate_entry(message, client, chat_to_scrape):
     # link to the  message
-    url = f'https://t.me/{chat_to_scrape}/{message.id}'.replace('@', '')
+    url: str = f'https://t.me/{chat_to_scrape}/{message.id}'.replace('@', '')
 
     # reactions
+    emojies_dict: dict[str, int] = {}
     hearts_likes = 0
     total_reactions = 0
-    if message.reactions is not None:
-        for reaction_count in message.reactions.results:
-            total_reactions += int(reaction_count.count)
-            if reaction_count.reaction.emoticon in ['👍', '❤️']:
-                hearts_likes += int(reaction_count.count)
+    if message.reactions:
+        for reaction_ in message.reactions.results:
+            emoji_count = {reaction_.reaction.emoticon: reaction_.count}
+            emojies_dict.update(emoji_count)
 
     # channel name after extracted from the channel link
     channel_name = chat_to_scrape.split("/")[-1] if "/" in chat_to_scrape else chat_to_scrape[1:]
 
-    # TODO make sure to correct the two hours gap
     # message date
     msg_data = message.date.strftime('%Y-%m-%d')
     msg_time = (message.date + timedelta(hours=2)).strftime('%H:%M:%S')
@@ -58,8 +60,7 @@ def generate_entry(message, client, chat_to_scrape):
     message_entry["comments"] = comments
 
     # updates the progress counter
-    print(f'Id: {message.id:05}.\n')
-    print(message_entry)
+    print(f'MSG ID:{message.id} , Date:{message.date}.\n')
     return message_entry
 
 
@@ -72,46 +73,42 @@ def authorize_client(client, phone_number):
         print("Done.")
 
 
-def load_messages(client, chat_to_scrape):
+def load_messages(client, chat_to_scrape, from_data, to_date):
     print("Loading messages..")
-    messages = client.iter_messages(chat_to_scrape)
-    print("Done.")
+    messages = client.iter_messages(chat_to_scrape, offset_date=to_date)
+    print(f"Scraped messages_from {from_data} to {to_date}")
     return messages
 
 
 def scrape_to_db(client, chat_to_scrape, phone_number, t, collection):
     # verifies authorization
     authorize_client(client, phone_number)
-    messages = load_messages(client, chat_to_scrape)
+    from_date = datetime(t['f_yy'], t['f_mm'], t['f_dd'], tzinfo=timezone.utc)
+    to_date = datetime(t['t_yy'], t['t_mm'], t['t_dd'], tzinfo=timezone.utc)
+    to_date = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    messages = load_messages(client, chat_to_scrape, from_date, to_date)
     counter = 0
     batch = []
+    total_counter = 0
     for message in messages:
-        from_date = datetime(t['f_yy'], t['f_mm'], t['f_dd'], tzinfo=timezone.utc)
-        to_date = datetime(t['t_yy'], t['t_mm'], t['t_dd'], tzinfo=timezone.utc)
-        to_date = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        # print(message.date <= to_date, message.date, "<=", to_date)
-        # print(message.date >= from_date, message.date, ">=", from_date)
-
         if from_date <= message.date < to_date:
             batch.append(generate_entry(message, client, chat_to_scrape))
             counter += 1
+            total_counter += 1
+            print(total_counter)
             if counter >= BATCH_SIZE:
                 collection.insert_many(batch)
                 batch.clear()
                 counter = 0
-                break
+        elif message.date < from_date:
+            if counter > 0:
+                collection.insert_many(batch)
+            break
 
 
 def main():
     # insert your credentials into a pickle file for security reasons
     # use this 'with open' statement only when you use new api
-    with open("credentials_pickel.pkl", 'wb') as file:
-        pickle.dump({"api_hash": "2aa2e33a9asdv44sca4040c4e2c8asdc4",
-                     "api_id": 11222222,
-                     "phone": +11222222
-                     }, file)
-
     # import credentials from pickle file
     with open("credentials_pickel.pkl", 'rb') as file:
         f = pickle.load(file)
@@ -126,23 +123,29 @@ def main():
     # enter the date range of the information you want to scrape
     # from f_date <= scraped_message <= t_date
     # f - from, t - to, dd - day, mm - month,yy - year
-    t = {"f_dd": 17, "t_dd": datetime.today().day,
-         "f_mm": 12, "t_mm": datetime.today().month,
-         "f_yy": 2023, "t_yy": datetime.today().year,
+    t = {"f_dd": 7, "t_dd": 20,
+         "f_mm": 10, "t_mm": 10,
+         "f_yy": 2023, "t_yy": 2023,
+         }
+    t = {"f_dd": datetime.now().day, "t_dd": datetime.now().day,
+         "f_mm": datetime.now().month, "t_mm": datetime.now().month,
+         "f_yy": datetime.now().year, "t_yy": datetime.now().year,
          }
     # connects to client
     client = TelegramClient(MemorySession(), api_id, api_hash)
     client.connect()
     # connects to db feel free to change
     collection = MongoClient(MONGO_LOCAL).Telegram_Test.chat_entries
-    # collection.delete_many({})
     # mine data from all the chats
     scrape_to_db(client, chat_to_scrape, phone_number, t, collection)
     client.disconnect()
 
 
 if __name__ == '__main__':
+    start = time.time()
     main()
+    over = time.time()
+    print(over - start)
 # attributes of message
 # ['CONSTRUCTOR_ID', 'SUBCLASS_OF_ID', '__abstractmethods__', '__bytes__', '__class__',
 # '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__',
